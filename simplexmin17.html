@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>单纯形法演示（随机生成）</title>
+    <style>
+        table { border-collapse: collapse; margin: 20px; }
+        td, th { border: 1px solid black; padding: 8px; }
+        .highlight { background-color: #ffeb3b; }
+        .table-container { margin: 20px 0; }
+        .pre-table { background-color: #ffe6e6; }
+        .post-table { background-color: #e6ffe6; }
+        .final-table { background-color: #ffffe6; }
+    </style>
+</head>
+<body>
+    <button onclick="generateNewProblem()">生成新问题</button>
+    <div id="simplexTable"></div>
+    <div id="message"></div>
+    <div id="inputSection" style="display:none;">
+        入基变量：<input type="text" id="enterVar">
+        出基变量：<input type="text" id="exitVar">
+        <button onclick="performIteration()">执行迭代</button>
+    </div>
+
+    <h3>使用说明：</h3>
+    <ol>
+        <li>点击"生成新问题"按钮创建随机问题实例</li>
+        <li>查看初始单纯形表，确定入基变量（负检验数）</li>
+        <li>根据最小比值规则确定出基变量</li>
+        <li>输入变量后点击"执行迭代"观察过程</li>
+    </ol>
+
+<script>
+let currentTable = [];
+let basis = ['x3', 'x4'];
+let history = [];
+
+// 生成随机整数 [min, max]
+function randomInt(min, max) {
+    return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// 分数转换函数
+function toFraction(decimal) {
+    const eps = 1.0e-6;
+    let numerator = 1, denominator = 1;
+    let x = Math.abs(decimal);
+    for (let i = 1; i <= 100; i++) {
+        if (Math.abs(x * i - Math.round(x * i)) < eps) {
+            numerator = decimal < 0 ? -Math.round(x * i) : Math.round(x * i);
+            denominator = i;
+            break;
+        }
+    }
+    return denominator === 1 ? numerator.toString() : `${numerator}/${denominator}`;
+}
+
+// 生成表格函数
+function generateTable(matrix, basisIndices, className) {
+    const container = document.createElement('div');
+    container.className = 'table-container';
+    
+    const table = document.createElement('table');
+    table.className = className;
+    const headerRow = table.insertRow();
+    headerRow.insertCell().textContent = '基变量';
+    
+    // 生成表头
+    for (let i = 1; i < matrix[0].length; i++) {
+        headerRow.insertCell().textContent = `x${i}`;
+    }
+    headerRow.insertCell().textContent = 'RHS';
+    
+    // 生成数据行
+    for (let i = 0; i < matrix.length - 1; i++) {
+        const row = table.insertRow();
+        row.insertCell().textContent = `x${basisIndices[i] + 1}`;
+        for (let j = 0; j < matrix[i].length; j++) {
+            row.insertCell().textContent = toFraction(matrix[i][j]);
+        }
+    }
+    
+    // 目标函数行
+    const lastRow = table.insertRow();
+    lastRow.insertCell().textContent = 'Z';
+    for (let j = 0; j < matrix[matrix.length - 1].length; j++) {
+        lastRow.insertCell().textContent = toFraction(matrix[matrix.length - 1][j]);
+    }
+    
+    container.appendChild(table);
+    return container;
+}
+
+function generateNewProblem() {
+    // 随机生成系数（确保至少有一个负检验数）
+    let c1, c2;
+    do {
+        c1 = randomInt(1, 5);  // 保证至少一个正数
+        c2 = Math.random() > 0.5 ? randomInt(1, 5) : -randomInt(0, 3);
+    } while (c1 <= 0 && c2 <= 0);
+
+    // 生成约束条件 (x3和x4为初始基变量)
+    const a = randomInt(1, 3), b = randomInt(1, 3);
+    const c = randomInt(1, 3), d = randomInt(1, 3);
+    const rhs1 = randomInt(5, 15);
+    const rhs2 = randomInt(5, 15);
+
+    currentTable = [
+        [a, b, 1, 0, rhs1],   // 约束1: a*x1 + b*x2 + x3 = rhs1
+        [c, d, 0, 1, rhs2],   // 约束2: c*x1 + d*x2 + x4 = rhs2
+        [-c1, -c2, 0, 0, 0]    // 目标函数行（检验数）
+    ];
+    
+    basis = ['x3', 'x4'];
+    history = [{
+        table: JSON.parse(JSON.stringify(currentTable)),
+        basis: [...basis]
+    }];
+    document.getElementById('inputSection').style.display = 'block';
+    updateDisplay();
+}
+
+function updateDisplay() {
+    const output = document.getElementById('simplexTable');
+    output.innerHTML = '';
+
+    history.forEach((state, index) => {
+        const label = document.createElement('h4');
+        if (index === 0) label.textContent = '初始单纯形表';
+        else label.textContent = `迭代${Math.ceil(index/2)} ${index % 2 === 1 ? '前' : '后'}`;
+        output.appendChild(label);
+        
+        const basisIndices = state.basis.map(b => ['x1','x2','x3','x4'].indexOf(b));
+        const table = generateTable(state.table, basisIndices, index % 2 === 1 ? 'pre-table' : 'post-table');
+        output.appendChild(table);
+    });
+}
+
+function performIteration() {
+    const enterVar = document.getElementById('enterVar').value;
+    const exitVar = document.getElementById('exitVar').value;
+    const enterIndex = ['x1','x2','x3','x4'].indexOf(enterVar);
+    const exitRow = basis.indexOf(exitVar);
+
+    // 保存迭代前状态
+    history.push({
+        table: JSON.parse(JSON.stringify(currentTable)),
+        basis: [...basis]
+    });
+
+    // 高斯消元
+    const pivot = currentTable[exitRow][enterIndex];
+    currentTable[exitRow] = currentTable[exitRow].map(v => v / pivot);
+    
+    for (let i = 0; i < 3; i++) {
+        if (i !== exitRow && i !== 2) {
+            const factor = currentTable[i][enterIndex];
+            currentTable[i] = currentTable[i].map((v, j) => v - factor * currentTable[exitRow][j]);
+        }
+    }
+    
+    // 更新检验数行
+    const zjFactor = currentTable[2][enterIndex];
+    currentTable[2] = currentTable[2].map((v, j) => v - zjFactor * currentTable[exitRow][j]);
+    
+    // 更新基变量并保存迭代后状态
+    basis[exitRow] = enterVar;
+    history.push({
+        table: JSON.parse(JSON.stringify(currentTable)),
+        basis: [...basis]
+    });
+    
+    updateDisplay();
+    checkOptimality();
+}
+
+function checkOptimality() {
+    if (currentTable[2].slice(0,4).every(c => c >= 0)) {
+        const finalLabel = document.createElement('h4');
+        finalLabel.textContent = '最终单纯形表';
+        const basisIndices = basis.map(b => ['x1','x2','x3','x4'].indexOf(b));
+        document.getElementById('simplexTable').appendChild(finalLabel);
+        document.getElementById('simplexTable').appendChild(generateTable(currentTable, basisIndices, 'final-table'));
+        setTimeout(() => alert("已达到最优解！"), 100);
+        document.getElementById('inputSection').style.display = 'none';
+    }
+}
+</script>
+</body>
+</html>
